@@ -1,5 +1,5 @@
 ---
-title: "인스타 악성 댓글, 한 번에 싹 지우는 방법"
+title: "인스타에서도 못잡는, 아니 안잡는 악성 댓글 탐지 및 삭제"
 date: 2026-05-30 12:00:00 +0900
 categories: [Tools]
 tags: [instagram, spam, tool, windows]
@@ -17,7 +17,6 @@ tags: [instagram, spam, tool, windows]
 글자 사이에 공백을 넣거나 이상한 기호를 섞어서 인스타그램 자체 필터를 일부러 피하는 방식이에요.
 
 하나씩 손으로 지우는 건 현실적으로 불가능하죠. 😔
-
 ---
 
 ## 이 앱이 뭔가요?
