@@ -36,7 +36,7 @@ order: 4
       <div>
         <div style="display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 0.3rem;">
           <span style="font-size: 0.88rem; font-weight: 500; opacity: 0.8;">ORR Project</span>
-          <span style="font-size: 0.78rem; opacity: 0.4;">2025.11 – 2026.02</span>
+          <span style="font-size: 0.78rem; opacity: 0.4;">2025.11 – 2026.01</span>
         </div>
       </div>
     </div>
@@ -111,7 +111,7 @@ order: 4
       <div style="font-weight: 600; font-size: 0.95rem;">제 10회 AI · SW 융합 해커톤 — 정보산업진흥원장상 장려상</div>
       <div style="font-size: 0.82rem; opacity: 0.45; margin-top: 0.2rem;">부산 정보산업진흥원</div>
     </div>
-    <span style="font-size: 0.82rem; opacity: 0.4;">2023</span>
+    <span style="font-size: 0.82rem; opacity: 0.4;">2025</span>
   </div>
 
 </div>
