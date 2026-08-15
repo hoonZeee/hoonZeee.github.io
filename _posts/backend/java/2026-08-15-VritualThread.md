@@ -17,6 +17,9 @@ tags: [Java, Virtual Thread, JDK 21, Concurrency, Spring Boot]
 
 결과적으로 동시에 수천~수만 개의 요청을 처리해야 하는 서버 애플리케이션에서 스레드를 무한정 늘리는 건 불가능하다. 그래서 스레드 풀로 스레드 수를 제한하고 재사용하는 방식이 표준이 되었는데, 이 방식은 사실상 **"처리량의 상한 = 스레드 풀 크기"**라는 한계를 내포하고 있다.
 
+![java-thread]({{ "/assets/images/java/virtual-thread/java-thread.png" | relative_url }})
+<sub>출처: [우아한테크블로그](https://techblog.woowahan.com/15398/)</sub>
+
 Virtual Thread는 이 구조적 한계를 깨기 위해 JDK 21에서 정식 도입되었다.
 
 > 참고: JEP 444: Virtual Threads
@@ -26,6 +29,9 @@ Virtual Thread는 이 구조적 한계를 깨기 위해 JDK 21에서 정식 도�
 Virtual Thread는 JVM이 관리하는 경량 스레드다. OS 스레드가 아닌 JVM 내부의 스케줄러가 관리하므로, 스택 메모리도 필요한 만큼만 동적으로 할당되고 (수 KB 수준에서 시작), 수백만 개를 생성해도 메모리 부담이 크지 않다.
 
 핵심은 OS 스레드와 1:1이 아니라 **M:N 모델**이라는 점이다. 다수의 Virtual Thread가 소수의 캐리어 스레드(Carrier Thread, 실제 OS 스레드)에 매핑되어 실행된다.
+
+![virtual-thread]({{ "/assets/images/java/virtual-thread/virtual-thread.png" | relative_url }})
+<sub>출처: [우아한테크블로그](https://techblog.woowahan.com/15398/)</sub>
 
 *(virtual thread 구조)*
 
@@ -44,6 +50,8 @@ Virtual Thread F ──┘
 2. Virtual Thread가 I/O 블로킹 작업(네트워크 호출, 파일 읽기, sleep 등)을 만나면 캐리어 스레드에서 **언마운트(unmount)**된다.
 3. 캐리어 스레드는 즉시 다른 Virtual Thread를 마운트하여 실행한다.
 4. 블로킹이 끝나면 Virtual Thread는 다시 빈 캐리어 스레드에 마운트되어 이어서 실행된다.
+
+![virtual-works]({{ "/assets/images/java/virtual-thread/virtual-works.png" | relative_url }})
 
 이 마운트/언마운트는 JVM 내부에서 일어나는 동작이므로 OS 컨텍스트 스위칭보다 훨씬 가볍다. 우리 입장에서는 기존과 똑같이 블로킹 코드를 쓰면 되고, 내부적으로 논블로킹처럼 동작하는 것이다.
 
@@ -261,3 +269,106 @@ Virtual Thread의 등장으로 "블로킹 코드 스타일로 논블로킹 성�
 - 이미 Reactor 생태계에 깊게 투자함
 
 > 참고: Spring Blog — Embracing Virtual Threads
+
+## 실습
+
+이번에는 실제 Spring Boot 환경에서 직접 Vittual Thread 를 테스트 해보자!
+아래는 테스트용 RestController다.
+
+```java
+package com.example.virtualThread;
+
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+import lombok.extern.slf4j.Slf4j;
+
+@Slf4j
+@RestController
+public class LoadTestController {
+
+    private static final long WORK_MILLIS = 1000L;
+
+    private final ExecutorService virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
+
+    @GetMapping("/api/normal")
+    public String normal() {
+        long start = System.currentTimeMillis();
+        log.info("[normal] start thread={}", Thread.currentThread());
+        sleep();
+        long elapsed = System.currentTimeMillis() - start;
+        log.info("[normal] end elapsed={}ms", elapsed);
+        return "normal done in " + elapsed + "ms";
+    }
+
+    @GetMapping("/api/virtual")
+    public CompletableFuture<String> virtual() {
+        long start = System.currentTimeMillis();
+        return CompletableFuture.supplyAsync(() -> {
+            log.info("[virtual] start thread={}", Thread.currentThread());
+            sleep();
+            long elapsed = System.currentTimeMillis() - start;
+            log.info("[virtual] end elapsed={}ms", elapsed);
+            return "virtual done in " + elapsed + "ms";
+        }, virtualThreadExecutor);
+    }
+
+    private void sleep() {
+        try {
+            Thread.sleep(WORK_MILLIS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+}
+```
+
+별도의 yml 설정 없이 기본 API 두 개만 준비했다.
+
+- `/api/normal`: 별도 설정 없이 요청이 오면 1초간 sleep 후 응답한다.
+- `/api/virtual`: 동일한 동작을 하지만 Virtual Thread로 실행한다.
+
+어떤 차이가 있을까?
+
+테스트를 위해 `ab -n 500 -c 500`으로 각 엔드포인트를 부하 테스트해봤다.
+
+![normal-test]({{ "/assets/images/java/virtual-thread/normal-test.png" | relative_url }})
+
+결과를 보면 200개가 응답을 받고 1초 쉬고, 다시 200개가 응답을 받는 식으로 총 4.052초가 걸린 것을 확인할 수 있다.
+
+![virtual-test]({{ "/assets/images/java/virtual-thread/virtual-test.png" | relative_url }})
+
+반면 virtual 엔드포인트는 한 번에 수행되어, 위 엔드포인트보다 훨씬 짧은 시간에 처리가 끝난 것을 확인할 수 있다.
+
+기본적으로 Spring Boot 3.x 버전에서 `application.yml`의 Tomcat 스레드는 200개가 기본 할당된다.
+
+```yaml
+server:
+  tomcat:
+    threads:
+      max: 200
+```
+
+그래서 200개의 스레드가 전부 요청을 처리한 뒤 1초를 쉬고 나서야 다음 요청을 처리하는 방식으로 동작한 것이다.
+
+Virtual Thread는 이와 다르게 요청이 올 때마다 새로 생성되기 때문에, 한 번에 처리된 것이다.
+위에서 개념 설명 부분에서 언급했던 .yml 에 virtual thread 로만 변경 한다면 결과는 어떻게 될까?
+```yaml
+# application.yml
+spring:
+  threads:
+    virtual:
+      enabled: true
+```
+
+당연하게도 /api/virtuals 엔드포인트와 동일한 결과를 낼것이다! 
+(당연히 대규모 프로젝트에선 이렇게 쓰면 안된다. ㅎㅎ)
+
+이상으로 Virtual Thread에 대해 공부해봤다.
+실제로 Virtual Thread가 필요할 만큼 동시 요청 트래픽이 많은 환경에도 직접 적용해보고 싶다는 생각이 들었다.
+
+사용법 자체도 간결하고, 기존 코드나 전체 의존성 구조를 크게 건드리지 않고도 상황에 맞게 도입할 수 있다는 점이 비교적 사용하기 편하다고 느껴졌다.
